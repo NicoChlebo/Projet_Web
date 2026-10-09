@@ -1,103 +1,110 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { useWebSocket } from '../composables/useWebSocket';
 
-const connectionStatus = ref('Connexion en cours...');
-const connectionClass = ref('status-connecting');
-const messages = ref([]);
-const author = ref('alice');
-const text = ref('');
-const isSending = ref(false);
-const errorMessage = ref('');
+const {
+  status,
+  closeCode,
+  closeReason,
+  messages,
+  error,
+  currentUser,
+  connect,
+  disconnect,
+  sendMessage,
+} = useWebSocket('/api/ws');
 
-let eventSource = null;
+const username = ref('alice');
+const messageText = ref('');
 
-function connectStream() {
-  eventSource = new EventSource('/api/stream');
+const isIdentified = computed(() => status.value === 'identified');
 
-  eventSource.onopen = () => {
-    connectionStatus.value = 'Connecté';
-    connectionClass.value = 'status-connected';
-  };
+const statusLabel = computed(() => {
+  if (status.value === 'identified') {
+    return `Connecté (Identifié : ${currentUser.value})`;
+  }
+  if (status.value === 'connected') {
+    return 'Connecté (Identification en cours...)';
+  }
+  if (status.value === 'connecting') {
+    return 'Connexion en cours...';
+  }
+  if (status.value === 'error') {
+    return 'Erreur de connexion';
+  }
+  if (closeCode.value !== null) {
+    return `Déconnecté (code ${closeCode.value}${closeReason.value ? ' : ' + closeReason.value : ''})`;
+  }
+  return 'Déconnecté';
+});
 
-  eventSource.addEventListener('message', (event) => {
-    try {
-      const data = JSON.parse(event.data);
-      if (!messages.value.some((m) => m.id === data.id)) {
-        messages.value.push(data);
-      }
-    } catch (e) {
-      console.error('Erreur de parsing SSE:', e);
-    }
-  });
+const statusClass = computed(() => {
+  if (status.value === 'identified') return 'status-connected';
+  if (status.value === 'connecting' || status.value === 'connected') return 'status-connecting';
+  return 'status-disconnected';
+});
 
-  eventSource.onerror = () => {
-    if (eventSource.readyState === EventSource.CONNECTING) {
-      connectionStatus.value = 'Connexion interrompue, tentative de reconnexion...';
-      connectionClass.value = 'status-reconnecting';
-    } else {
-      connectionStatus.value = 'Déconnecté';
-      connectionClass.value = 'status-disconnected';
-    }
-  };
+function handleConnect() {
+  if (username.value.trim()) {
+    connect(username.value.trim());
+  }
 }
 
-async function sendMessage() {
-  if (!author.value.trim() || !text.value.trim() || isSending.value) {
+function handleSendMessage() {
+  if (!messageText.value.trim() || !isIdentified.value) {
     return;
   }
-
-  isSending.value = true;
-  errorMessage.value = '';
-
-  const payload = {
-    author: author.value.trim(),
-    text: text.value.trim(),
-  };
-
-  try {
-    const res = await fetch('/api/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Erreur serveur HTTP ${res.status}`);
-    }
-
-    text.value = '';
-  } catch (err) {
-    errorMessage.value = `Échec de l'envoi : ${err.message}`;
-  } finally {
-    isSending.value = false;
+  const sent = sendMessage(messageText.value.trim());
+  if (sent) {
+    messageText.value = '';
   }
 }
 
 onMounted(() => {
-  connectStream();
-});
-
-onUnmounted(() => {
-  if (eventSource) {
-    eventSource.close();
-  }
+  handleConnect();
 });
 </script>
 
 <template>
   <div class="chat-container">
     <header class="chat-header">
-      <h1>Salon temps réel (v0)</h1>
-      <div class="status-badge" :class="connectionClass">
-        État : <strong>{{ connectionStatus }}</strong>
+      <h1>Salon temps réel (v1 - WebSocket)</h1>
+      <div class="status-badge" :class="statusClass">
+        État : <strong>{{ statusLabel }}</strong>
       </div>
     </header>
 
-    <div v-if="errorMessage" class="error-banner">
-      {{ errorMessage }}
+    <div class="user-bar">
+      <div class="user-form">
+        <label for="username-input">Utilisateur :</label>
+        <input
+          id="username-input"
+          v-model="username"
+          type="text"
+          placeholder="Nom d'utilisateur"
+          :disabled="isIdentified"
+        />
+        <button
+          v-if="!isIdentified"
+          type="button"
+          class="btn-connect"
+          @click="handleConnect"
+        >
+          Se connecter
+        </button>
+        <button
+          v-else
+          type="button"
+          class="btn-disconnect"
+          @click="disconnect"
+        >
+          Se déconnecter
+        </button>
+      </div>
+    </div>
+
+    <div v-if="error" class="error-banner">
+      {{ error }}
     </div>
 
     <section class="messages-list">
@@ -116,33 +123,21 @@ onUnmounted(() => {
       </div>
     </section>
 
-    <form class="message-form" @submit.prevent="sendMessage">
-      <div class="form-row">
-        <label for="author-input">Auteur :</label>
-        <input
-          id="author-input"
-          v-model="author"
-          type="text"
-          placeholder="Votre nom"
-          required
-        />
-      </div>
-
+    <form class="message-form" @submit.prevent="handleSendMessage">
       <div class="form-row">
         <label for="message-input">Message :</label>
         <input
           id="message-input"
-          v-model="text"
+          v-model="messageText"
           type="text"
           placeholder="Tapez votre message..."
           required
-          :disabled="isSending"
+          :disabled="!isIdentified"
         />
-        <button type="submit" :disabled="isSending || !text.trim()">
-          {{ isSending ? 'Envoi en cours...' : 'Envoyer' }}
+        <button type="submit" :disabled="!isIdentified || !messageText.trim()">
+          Envoyer
         </button>
       </div>
-      <span v-if="isSending" class="sending-indicator">Envoi en cours…</span>
     </form>
   </div>
 </template>
@@ -175,7 +170,7 @@ onUnmounted(() => {
 .status-badge {
   padding: 0.3rem 0.6rem;
   border-radius: 4px;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
 }
 
 .status-connected {
@@ -183,8 +178,7 @@ onUnmounted(() => {
   color: #155724;
 }
 
-.status-connecting,
-.status-reconnecting {
+.status-connecting {
   background-color: #fff3cd;
   color: #856404;
 }
@@ -192,6 +186,48 @@ onUnmounted(() => {
 .status-disconnected {
   background-color: #f8d7da;
   color: #721c24;
+}
+
+.user-bar {
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+}
+
+.user-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.user-form label {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.user-form input {
+  padding: 0.4rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.btn-connect {
+  padding: 0.4rem 0.8rem;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.btn-disconnect {
+  padding: 0.4rem 0.8rem;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .error-banner {
@@ -271,11 +307,5 @@ onUnmounted(() => {
 .form-row button:disabled {
   background-color: #99c2ff;
   cursor: not-allowed;
-}
-
-.sending-indicator {
-  font-size: 0.85rem;
-  color: #666;
-  font-style: italic;
 }
 </style>
