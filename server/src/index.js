@@ -12,7 +12,17 @@ let nextId = 1;
 // Clients connectés au flux SSE
 const clients = new Set();
 
-// Étape 2 — Réception d'un message
+/**
+ * Diffuse un message à tous les clients connectés au flux SSE.
+ */
+function broadcast(message) {
+  const frame = `id: ${message.id}\nevent: message\ndata: ${JSON.stringify(message)}\n\n`;
+  for (const clientRes of clients) {
+    clientRes.write(frame);
+  }
+}
+
+// Étape 2 & 4 — Réception et diffusion d'un message
 app.post('/api/messages', (req, res) => {
   const { author, text } = req.body || {};
 
@@ -37,6 +47,7 @@ app.post('/api/messages', (req, res) => {
   };
 
   messages.push(message);
+  broadcast(message);
 
   return res.status(201).json(message);
 });
