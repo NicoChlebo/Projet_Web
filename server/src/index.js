@@ -5,16 +5,11 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// Stockage en mémoire
 const messages = [];
 let nextId = 1;
 
-// Clients connectés au flux SSE
 const clients = new Set();
 
-/**
- * Diffuse un message à tous les clients connectés au flux SSE.
- */
 function broadcast(message) {
   const frame = `id: ${message.id}\nevent: message\ndata: ${JSON.stringify(message)}\n\n`;
   for (const clientRes of clients) {
@@ -22,7 +17,6 @@ function broadcast(message) {
   }
 }
 
-// Étape 2 & 4 — Réception et diffusion d'un message
 app.post('/api/messages', (req, res) => {
   const { author, text } = req.body || {};
 
@@ -52,7 +46,6 @@ app.post('/api/messages', (req, res) => {
   return res.status(201).json(message);
 });
 
-// Étape 3 & 6 — Flux SSE et reprise après coupure (Last-Event-ID)
 app.get('/api/stream', (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -62,7 +55,6 @@ app.get('/api/stream', (req, res) => {
 
   res.write('retry: 3000\n\n');
 
-  // Reprise après coupure : rejeu des messages manqués avant ajout aux abonnés actifs
   const rawLastId = req.headers['last-event-id'];
   if (rawLastId !== undefined) {
     const lastId = Number(rawLastId);
@@ -74,7 +66,6 @@ app.get('/api/stream', (req, res) => {
     }
   }
 
-  // Ajout à la liste de diffusion active après le rejeu du delta
   clients.add(res);
 
   res.on('close', () => {

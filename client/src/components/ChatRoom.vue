@@ -22,7 +22,6 @@ function connectStream() {
   eventSource.addEventListener('message', (event) => {
     try {
       const data = JSON.parse(event.data);
-      // Éviter les doublons par identifiant
       if (!messages.value.some((m) => m.id === data.id)) {
         messages.value.push(data);
       }
@@ -69,11 +68,9 @@ async function sendMessage() {
       throw new Error(err.error || `Erreur serveur HTTP ${res.status}`);
     }
 
-    // Le message sera reçu et affiché via le flux SSE pour éviter tout doublon
     text.value = '';
   } catch (err) {
     errorMessage.value = `Échec de l'envoi : ${err.message}`;
-    // Le texte saisi reste dans text.value pour ne pas être perdu
   } finally {
     isSending.value = false;
   }
