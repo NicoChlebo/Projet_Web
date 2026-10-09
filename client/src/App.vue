@@ -1,7 +1,18 @@
 <script setup>
-import HelloWorld from './components/HelloWorld.vue'
+import ChatRoom from './components/ChatRoom.vue'
 </script>
 
 <template>
-  <HelloWorld />
+  <main>
+    <ChatRoom />
+  </main>
 </template>
+
+<style>
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #f0f2f5;
+  color: #333;
+}
+</style>
