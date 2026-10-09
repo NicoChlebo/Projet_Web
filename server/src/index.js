@@ -108,6 +108,11 @@ function broadcastWs(msgObj) {
 
 wss.on('connection', (ws) => {
   ws.user = null;
+  ws.isAlive = true;
+
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
 
   ws.on('message', (raw, isBinary) => {
     const envelope = parseEnvelope(raw, isBinary);
@@ -169,6 +174,21 @@ wss.on('connection', (ws) => {
 
     sendError(ws, 'UNKNOWN_TYPE', `Type de message inconnu : '${type}'.`);
   });
+});
+
+const heartbeatInterval = setInterval(() => {
+  for (const ws of wss.clients) {
+    if (ws.isAlive === false) {
+      ws.terminate();
+    } else {
+      ws.isAlive = false;
+      ws.ping();
+    }
+  }
+}, 30000);
+
+wss.on('close', () => {
+  clearInterval(heartbeatInterval);
 });
 
 server.listen(PORT, () => {
