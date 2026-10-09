@@ -9,6 +9,9 @@ app.use(express.json());
 const messages = [];
 let nextId = 1;
 
+// Clients connectés au flux SSE
+const clients = new Set();
+
 // Étape 2 — Réception d'un message
 app.post('/api/messages', (req, res) => {
   const { author, text } = req.body || {};
@@ -36,6 +39,23 @@ app.post('/api/messages', (req, res) => {
   messages.push(message);
 
   return res.status(201).json(message);
+});
+
+// Étape 3 — Flux SSE
+app.get('/api/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+
+  res.write('retry: 3000\n\n');
+
+  clients.add(res);
+
+  res.on('close', () => {
+    clients.delete(res);
+  });
 });
 
 app.listen(PORT, () => {
