@@ -52,7 +52,7 @@ app.post('/api/messages', (req, res) => {
   return res.status(201).json(message);
 });
 
-// Étape 3 — Flux SSE
+// Étape 3 & 6 — Flux SSE et reprise après coupure (Last-Event-ID)
 app.get('/api/stream', (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -62,6 +62,19 @@ app.get('/api/stream', (req, res) => {
 
   res.write('retry: 3000\n\n');
 
+  // Reprise après coupure : rejeu des messages manqués avant ajout aux abonnés actifs
+  const rawLastId = req.headers['last-event-id'];
+  if (rawLastId !== undefined) {
+    const lastId = Number(rawLastId);
+    if (!isNaN(lastId)) {
+      const missedMessages = messages.filter((m) => m.id > lastId);
+      for (const m of missedMessages) {
+        res.write(`id: ${m.id}\nevent: message\ndata: ${JSON.stringify(m)}\n\n`);
+      }
+    }
+  }
+
+  // Ajout à la liste de diffusion active après le rejeu du delta
   clients.add(res);
 
   res.on('close', () => {
