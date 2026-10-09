@@ -108,3 +108,19 @@ Pour préparer les séances ultérieures, voici les interrogations majeures soul
   - Reconnexion automatique : le navigateur réessaye automatiquement de se reconnecter selon la directive `retry: 3000` sans recharger la page.
   - Reprise avec `Last-Event-ID` : à la reconnexion, le navigateur transmet automatiquement le dernier identifiant reçu. Le serveur rejoue alors fidèlement les messages émis pendant la coupure avant d'inscrire le client dans les abonnés actifs.
   - **Limite critique observée** : La mémoire vive étant volatile, un redémarrage complet du serveur Express réinitialise le tableau de messages et le compteur d'IDs (`nextId = 1`). Si un client envoie un `Last-Event-ID` supérieur aux nouveaux IDs, la reprise échoue silencieusement. Cette limite justifie pleinement l'utilisation future de Redis (séance 9) pour persister l'historique et l'ordonnancement.
+
+---
+
+## 8. Bilan du passage à WebSocket (v1)
+
+### Ce que WebSocket a apporté par rapport à la v0 (SSE + POST) :
+1. **Canal unique full-duplex** : Une seule connexion bidirectionnelle remplace le couplage asymétrique `POST /api/messages` + `GET /api/stream`.
+2. **Réduction massive du surcoût réseau** : Les trames WebSocket n'ont que 2 à 14 octets d'en-tête, contre plusieurs centaines d'octets d'en-têtes HTTP pour chaque requête POST de la v0. C'est particulièrement adapté pour la haute fréquence et la future intégration de la saisie en cours (« alice écrit... »).
+3. **Session et identité persistantes sur la socket** : L'utilisateur s'identifie une seule fois au début de la connexion (`user:identify`). Le serveur associe l'identité à l'instance socket, ce qui allège tous les messages ultérieurs (le client n'a plus à transmettre son nom dans chaque message).
+4. **Détection active des connexions mortes** : Utilisation des trames de contrôle de protocole `ping`/`pong` pour libérer la mémoire serveur dès qu'un client ne répond plus.
+
+### Ce que WebSocket a fait perdre par rapport à la v0 :
+1. **Reconnexion automatique du navigateur perdue** : L'API standard `new WebSocket()` ne dispose d'aucun mécanisme natif de reconnexion automatique (contrairement à `EventSource` qui réessaye automatiquement avec `retry`). La reconnexion doit être entièrement programmée côté client.
+2. **Reprise des messages manqués perdue** : La v0 bénéficiait de l'en-tête standardisé `Last-Event-ID` permettant au serveur de rejouer le delta immédiatement. En v1, cette reprise n'est pas gérée nativement et devra être réimplémentée au niveau applicatif (prévue en séance 8).
+3. **Sémantique HTTP standard perdue** : On ne dispose plus des codes de statut HTTP classiques (201 Created, 400 Bad Request) ni des possibilités de mise en cache intermédiaire. Il a fallu définir notre propre enveloppe JSON et nos propres codes d'erreur applicatifs (`server:error`).
+
