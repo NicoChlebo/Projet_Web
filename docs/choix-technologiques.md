@@ -92,3 +92,19 @@ Pour préparer les séances ultérieures, voici les interrogations majeures soul
 - **Ce qui ferait basculer le choix vers WebSocket dès le départ** :
   - Une augmentation significative du nombre d'utilisateurs simultanés actifs dans les salons.
   - Une exigence de communication bidirectionnelle haute fréquence (jeux en ligne, co-écriture lettre par lettre, audio/vidéo).
+
+---
+
+## 7. Observations sur la première version (v0)
+
+- **Latence mesurée** :
+  - Flux descendant SSE : quasi instantané ($< 20\text{ ms}$ en local). Le message est écrit dans le flux des clients connectés dans la même itération de l'Event Loop que la complétion de la requête POST.
+- **Nombre de requêtes et overhead** :
+  - Une seule connexion persistante `GET /api/stream` par onglet client.
+  - Une requête ponctuelle `POST /api/messages` par émission.
+  - Aucun polling inutile en période d'inactivité (0 requête).
+- **Comportement à la coupure réseau** :
+  - Côté client : la coupure déclenche immédiatement `onerror` sur l'objet `EventSource`. L'interface bascule en état visuel d'avertissement (« Connexion interrompue, tentative de reconnexion... »).
+  - Reconnexion automatique : le navigateur réessaye automatiquement de se reconnecter selon la directive `retry: 3000` sans recharger la page.
+  - Reprise avec `Last-Event-ID` : à la reconnexion, le navigateur transmet automatiquement le dernier identifiant reçu. Le serveur rejoue alors fidèlement les messages émis pendant la coupure avant d'inscrire le client dans les abonnés actifs.
+  - **Limite critique observée** : La mémoire vive étant volatile, un redémarrage complet du serveur Express réinitialise le tableau de messages et le compteur d'IDs (`nextId = 1`). Si un client envoie un `Last-Event-ID` supérieur aux nouveaux IDs, la reprise échoue silencieusement. Cette limite justifie pleinement l'utilisation future de Redis (séance 9) pour persister l'historique et l'ordonnancement.
